@@ -60,24 +60,18 @@
             cursor: pointer;
         }
 
-        #controls span {
-            font-size: 12px;
-            color: #ccc;
-        }
-
         #fps {
             position: absolute;
             top: 10px;
             right: 10px;
             background: rgba(0, 0, 0, 0.7);
             padding: 10px;
-            border-radius: 5px;
+            border-radius: 4px;
             font-size: 14px;
-            color: #0f0;
         }
 
         canvas {
-            border: 1px solid #333;
+            border: 1px solid #444;
         }
     </style>
 </head>
@@ -95,22 +89,22 @@
         <span id="dampingValue">0.9</span>
         
         <label for="rotationSpeed">Rotation Speed:</label>
-        <input type="range" id="rotationSpeed" min="0" max="5" step="0.1" value="1">
-        <span id="rotationSpeedValue">1.0</span> rad/s
+        <input type="range" id="rotationSpeed" min="0" max="10" step="0.1" value="1">
+        <span id="rotationSpeedValue">1</span> rad/s
         
-        <label for="ballCount">Number of Balls:</label>
+        <label for="ballCount">Ball Count:</label>
         <input type="range" id="ballCount" min="1" max="10" step="1" value="1">
         <span id="ballCountValue">1</span>
         
         <label for="ballSize">Ball Size:</label>
-        <input type="range" id="ballSize" min="5" max="30" step="1" value="15">
-        <span id="ballSizeValue">15</span> px
+        <input type="range" id="ballSize" min="5" max="30" step="1" value="10">
+        <span id="ballSizeValue">10</span> px
         
         <label for="ballColor">Ball Color:</label>
         <input type="color" id="ballColor" value="#ff6b6b">
     </div>
     
-    <div id="fps">FPS: 0</div>
+    <div id="fps">FPS: <span id="fpsValue">0</span></div>
     
     <canvas id="canvas"></canvas>
 
@@ -136,272 +130,339 @@
         let rotationSpeedValue = document.getElementById('rotationSpeedValue');
         let ballCountValue = document.getElementById('ballCountValue');
         let ballSizeValue = document.getElementById('ballSizeValue');
+        let fpsDisplay = document.getElementById('fpsValue');
+
+        // Physics parameters
+        let gravity = parseFloat(gravitySlider.value) * 100; // Scale for pixels
+        let damping = parseFloat(dampingSlider.value);
+        let rotationSpeed = parseFloat(rotationSpeedSlider.value) * 0.01;
+        let ballCount = parseInt(ballCountSlider.value);
+        let ballSize = parseInt(ballSizeSlider.value);
+        let ballColor = ballColorInput.value;
 
         // Game state
-        let isRunning = false;
-        let gravity = 9.8;
-        let damping = 0.9;
-        let rotationSpeed = 1;
-        let ballCount = 1;
-        let ballSize = 15;
-        let ballColor = '#ff6b6b';
-        let boxRotation = 0;
+        let box = {
+            x: canvas.width / 2,
+            y: canvas.height / 2,
+            width: 400,
+            height: 400,
+            angle: 0
+        };
 
-        // Box dimensions
-        const boxSize = Math.min(canvas.width, canvas.height) * 0.6;
-        const boxX = canvas.width / 2;
-        const boxY = canvas.height / 2;
-
-        // Balls array
         let balls = [];
-
-        // Trail effect
-        let trails = [];
-
-        // FPS calculation
-        let lastTime = 0;
-        let fps = 0;
+        let running = false;
+        let lastTime = performance.now();
         let frameCount = 0;
-        let fpsTime = 0;
+        let fpsTime = performance.now();
 
-        // Ball class
-        class Ball {
-            constructor(x, y, radius, color) {
-                this.x = x;
-                this.y = y;
-                this.vx = (Math.random() - 0.5) * 4;
-                this.vy = (Math.random() - 0.5) * 4;
-                this.radius = radius;
-                this.color = color;
-                this.trail = [];
-            }
-
-            update(dt) {
-                // Apply gravity
-                this.vy += gravity * dt;
-
-                // Update position
-                this.x += this.vx * dt * 60;
-                this.y += this.vy * dt * 60;
-
-                // Store trail
-                this.trail.push({x: this.x, y: this.y});
-                if (this.trail.length > 20) {
-                    this.trail.shift();
-                }
-
-                // Check collision with rotated box
-                this.checkBoxCollision();
-            }
-
-            checkBoxCollision() {
-                // Transform ball position to box's local coordinates
-                let cos = Math.cos(-boxRotation);
-                let sin = Math.sin(-boxRotation);
-                let dx = this.x - boxX;
-                let dy = this.y - boxY;
-                let localX = dx * cos - dy * sin;
-                let localY = dx * sin + dy * cos;
-
-                // Check collision with box walls
-                let halfSize = boxSize / 2;
-                let hit = false;
-
-                if (Math.abs(localX) + this.radius > halfSize) {
-                    localX = Math.sign(localX) * (halfSize - this.radius);
-                    this.vx *= -damping;
-                    hit = true;
-                }
-
-                if (Math.abs(localY) + this.radius > halfSize) {
-                    localY = Math.sign(localY) * (halfSize - this.radius);
-                    this.vy *= -damping;
-                    hit = true;
-                }
-
-                if (hit) {
-                    // Transform back to world coordinates
-                    cos = Math.cos(boxRotation);
-                    sin = Math.sin(boxRotation);
-                    this.x = boxX + localX * cos - localY * sin;
-                    this.y = boxY + localX * sin + localY * cos;
-
-                    // Add rotation effect to velocity
-                    let tangentialVelocity = rotationSpeed * Math.sqrt(localX * localX + localY * localY);
-                    this.vx += -localY * rotationSpeed * 0.1;
-                    this.vy += localX * rotationSpeed * 0.1;
-                }
-            }
-
-            draw() {
-                // Draw trail
-                ctx.strokeStyle = this.color + '30';
-                ctx.lineWidth = 2;
-                ctx.beginPath();
-                for (let i = 0; i < this.trail.length; i++) {
-                    if (i === 0) {
-                        ctx.moveTo(this.trail[i].x, this.trail[i].y);
-                    } else {
-                        ctx.lineTo(this.trail[i].x, this.trail[i].y);
-                    }
-                }
-                ctx.stroke();
-
-                // Draw ball with gradient
-                const gradient = ctx.createRadialGradient(
-                    this.x - this.radius * 0.3, 
-                    this.y - this.radius * 0.3, 
-                    0,
-                    this.x, 
-                    this.y, 
-                    this.radius
-                );
-                gradient.addColorStop(0, '#ffffff');
-                gradient.addColorStop(0.3, this.color);
-                gradient.addColorStop(1, this.adjustBrightness(this.color, -50));
-
-                ctx.fillStyle = gradient;
-                ctx.beginPath();
-                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            adjustBrightness(hex, percent) {
-                const num = parseInt(hex.replace('#', ''), 16);
-                const amt = Math.round(2.55 * percent);
-                const R = (num >> 16) + amt;
-                const G = (num >> 8 & 0x00FF) + amt;
-                const B = (num & 0x0000FF) + amt;
-                return '#' + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
-                    (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
-                    (B < 255 ? B < 1 ? 0 : B : 255))
-                    .toString(16).slice(1);
-            }
+        // Create ball object
+        function createBall(x, y, radius, color) {
+            return {
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * 200,
+                vy: 0,
+                radius: radius,
+                color: color,
+                trail: []
+            };
         }
 
         // Initialize balls
         function initBalls() {
             balls = [];
             for (let i = 0; i < ballCount; i++) {
-                let x = boxX + (Math.random() - 0.5) * boxSize * 0.8;
-                let y = boxY + (Math.random() - 0.5) * boxSize * 0.8;
-                balls.push(new Ball(x, y, ballSize, ballColor));
+                let x = box.x + (Math.random() - 0.5) * (box.width - ballSize * 2);
+                let y = box.y + (Math.random() - 0.5) * (box.height - ballSize * 2);
+                balls.push(createBall(x, y, ballSize, ballColor));
             }
         }
 
-        // Draw rotating box
-        function drawBox() {
-            ctx.save();
-            ctx.translate(boxX, boxY);
-            ctx.rotate(boxRotation);
+        // Update control values
+        function updateControls() {
+            gravityValue.textContent = gravitySlider.value;
+            dampingValue.textContent = dampingSlider.value;
+            rotationSpeedValue.textContent = rotationSpeedSlider.value;
+            ballCountValue.textContent = ballCountSlider.value;
+            ballSizeValue.textContent = ballSizeSlider.value;
+        }
 
-            // Draw box wireframe
+        // Event listeners
+        gravitySlider.addEventListener('input', function() {
+            gravity = parseFloat(this.value) * 100;
+            updateControls();
+        });
+
+        dampingSlider.addEventListener('input', function() {
+            damping = parseFloat(this.value);
+            updateControls();
+        });
+
+        rotationSpeedSlider.addEventListener('input', function() {
+            rotationSpeed = parseFloat(this.value) * 0.01;
+            updateControls();
+        });
+
+        ballCountSlider.addEventListener('input', function() {
+            ballCount = parseInt(this.value);
+            initBalls();
+            updateControls();
+        });
+
+        ballSizeSlider.addEventListener('input', function() {
+            ballSize = parseInt(this.value);
+            balls.forEach(ball => ball.radius = ballSize);
+            updateControls();
+        });
+
+        ballColorInput.addEventListener('input', function() {
+            ballColor = this.value;
+            balls.forEach(ball => ball.color = ballColor);
+        });
+
+        startPauseButton.addEventListener('click', function() {
+            running = !running;
+            this.textContent = running ? 'Pause' : 'Start';
+        });
+
+        resetButton.addEventListener('click', function() {
+            initBalls();
+            box.angle = 0;
+            running = false;
+            startPauseButton.textContent = 'Start';
+        });
+
+        // Rotate point around origin
+        function rotatePoint(x, y, angle, originX, originY) {
+            let cosA = Math.cos(angle);
+            let sinA = Math.sin(angle);
+            let dx = x - originX;
+            let dy = y - originY;
+            return {
+                x: dx * cosA - dy * sinA + originX,
+                y: dx * sinA + dy * cosA + originY
+            };
+        }
+
+        // Check if point is inside rotated box
+        function isPointInRotatedBox(px, py, box) {
+            // Transform point to box's local coordinates
+            let angle = -box.angle;
+            let translated = rotatePoint(px, py, angle, box.x, box.y);
+            let localX = translated.x - box.x;
+            let localY = translated.y - box.y;
+            
+            return Math.abs(localX) <= box.width / 2 && Math.abs(localY) <= box.height / 2;
+        }
+
+        // Handle ball-box collision
+        function handleBoxCollision(ball, box, dt) {
+            // Transform ball to box's local coordinates
+            let angle = -box.angle;
+            let translated = rotatePoint(ball.x, ball.y, angle, box.x, box.y);
+            let localX = translated.x - box.x;
+            let localY = translated.y - box.y;
+            
+            // Check each wall
+            let collision = false;
+            let normal = { x: 0, y: 0 };
+            
+            // Left wall
+            if (localX - ball.radius < -box.width / 2) {
+                localX = -box.width / 2 + ball.radius;
+                normal.x = 1;
+                collision = true;
+            }
+            // Right wall
+            else if (localX + ball.radius > box.width / 2) {
+                localX = box.width / 2 - ball.radius;
+                normal.x = -1;
+                collision = true;
+            }
+            
+            // Top wall
+            if (localY - ball.radius < -box.height / 2) {
+                localY = -box.height / 2 + ball.radius;
+                normal.y = 1;
+                collision = true;
+            }
+            // Bottom wall
+            else if (localY + ball.radius > box.height / 2) {
+                localY = box.height / 2 - ball.radius;
+                normal.y = -1;
+                collision = true;
+            }
+            
+            if (collision) {
+                // Transform position back to world coordinates
+                let worldPos = rotatePoint(localX + box.x, localY + box.y, box.angle, box.x, box.y);
+                ball.x = worldPos.x;
+                ball.y = worldPos.y;
+                
+                // Transform normal to world coordinates
+                let worldNormal = rotatePoint(normal.x, normal.y, box.angle, 0, 0);
+                
+                // Reflect velocity
+                let dot = ball.vx * worldNormal.x + ball.vy * worldNormal.y;
+                ball.vx = (ball.vx - 2 * dot * worldNormal.x) * damping;
+                ball.vy = (ball.vy - 2 * dot * worldNormal.y) * damping;
+                
+                // Add rotation effect
+                let tangent = { x: -worldNormal.y, y: worldNormal.x };
+                let rotationEffect = rotationSpeed * box.width * 0.5;
+                ball.vx += tangent.x * rotationEffect;
+                ball.vy += tangent.y * rotationEffect;
+            }
+        }
+
+        // Update ball physics
+        function updateBall(ball, dt) {
+            // Apply gravity
+            ball.vy += gravity * dt;
+            
+            // Update position
+            ball.x += ball.vx * dt;
+            ball.y += ball.vy * dt;
+            
+            // Add to trail
+            ball.trail.push({ x: ball.x, y: ball.y });
+            if (ball.trail.length > 30) {
+                ball.trail.shift();
+            }
+            
+            // Check collision with box
+            handleBoxCollision(ball, box, dt);
+        }
+
+        // Draw box
+        function drawBox(box) {
+            ctx.save();
+            ctx.translate(box.x, box.y);
+            ctx.rotate(box.angle);
+            
+            // Draw 3D effect
             ctx.strokeStyle = '#00ff00';
             ctx.lineWidth = 3;
-            ctx.strokeRect(-boxSize/2, -boxSize/2, boxSize, boxSize);
-
-            // Draw corner markers
-            const cornerSize = 20;
-            ctx.fillStyle = '#00ff00';
-            const corners = [
-                [-boxSize/2, -boxSize/2],
-                [boxSize/2, -boxSize/2],
-                [boxSize/2, boxSize/2],
-                [-boxSize/2, boxSize/2]
-            ];
-
-            corners.forEach((corner, i) => {
-                ctx.save();
-                ctx.translate(corner[0], corner[1]);
-                ctx.rotate(Math.PI / 4);
-                ctx.fillRect(-cornerSize/2, -2, cornerSize, 4);
-                ctx.fillRect(-2, -cornerSize/2, 4, cornerSize);
-                ctx.restore();
-            });
-
+            ctx.strokeRect(-box.width / 2, -box.height / 2, box.width, box.height);
+            
+            // Draw corners for 3D effect
+            ctx.strokeStyle = '#00ff88';
+            ctx.lineWidth = 5;
+            let cornerSize = 20;
+            // Top-left
+            ctx.beginPath();
+            ctx.moveTo(-box.width / 2, -box.height / 2 + cornerSize);
+            ctx.lineTo(-box.width / 2, -box.height / 2);
+            ctx.lineTo(-box.width / 2 + cornerSize, -box.height / 2);
+            ctx.stroke();
+            
+            // Top-right
+            ctx.beginPath();
+            ctx.moveTo(box.width / 2 - cornerSize, -box.height / 2);
+            ctx.lineTo(box.width / 2, -box.height / 2);
+            ctx.lineTo(box.width / 2, -box.height / 2 + cornerSize);
+            ctx.stroke();
+            
+            // Bottom-right
+            ctx.beginPath();
+            ctx.moveTo(box.width / 2, box.height / 2 - cornerSize);
+            ctx.lineTo(box.width / 2, box.height / 2);
+            ctx.lineTo(box.width / 2 - cornerSize, box.height / 2);
+            ctx.stroke();
+            
+            // Bottom-left
+            ctx.beginPath();
+            ctx.moveTo(-box.width / 2 + cornerSize, box.height / 2);
+            ctx.lineTo(-box.width / 2, box.height / 2);
+            ctx.lineTo(-box.width / 2, box.height / 2 - cornerSize);
+            ctx.stroke();
+            
             ctx.restore();
+        }
+
+        // Draw ball with gradient
+        function drawBall(ball) {
+            // Draw trail
+            if (ball.trail.length > 1) {
+                ctx.beginPath();
+                ctx.moveTo(ball.trail[0].x, ball.trail[0].y);
+                for (let i = 1; i < ball.trail.length; i++) {
+                    let alpha = i / ball.trail.length * 0.3;
+                    ctx.strokeStyle = `rgba(255, 255, 255, ${alpha})`;
+                    ctx.lineTo(ball.trail[i].x, ball.trail[i].y);
+                }
+                ctx.stroke();
+            }
+            
+            // Draw ball with gradient
+            let gradient = ctx.createRadialGradient(
+                ball.x - ball.radius * 0.3, 
+                ball.y - ball.radius * 0.3, 
+                0,
+                ball.x, 
+                ball.y, 
+                ball.radius
+            );
+            gradient.addColorStop(0, '#ffffff');
+            gradient.addColorStop(0.3, ball.color);
+            gradient.addColorStop(1, adjustColor(ball.color, -50));
+            
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            
+            // Add rim
+            ctx.strokeStyle = adjustColor(ball.color, -100);
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        // Adjust color brightness
+        function adjustColor(color, amount) {
+            let num = parseInt(color.replace('#', ''), 16);
+            let r = Math.max(0, Math.min(255, (num >> 16) + amount));
+            let g = Math.max(0, Math.min(255, ((num >> 8) & 0x00FF) + amount));
+            let b = Math.max(0, Math.min(255, (num & 0x0000FF) + amount));
+            return '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0');
         }
 
         // Animation loop
         function animate(currentTime) {
-            const deltaTime = Math.min((currentTime - lastTime) / 1000, 0.1);
+            let dt = (currentTime - lastTime) / 1000;
+            dt = Math.min(dt, 0.02); // Cap delta time
             lastTime = currentTime;
-
-            // Calculate FPS
+            
+            // Clear canvas
+            ctx.fillStyle = 'rgba(17, 17, 17, 0.1)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            if (running) {
+                // Update box rotation
+                box.angle += rotationSpeed;
+                
+                // Update balls
+                balls.forEach(ball => updateBall(ball, dt));
+            }
+            
+            // Draw everything
+            drawBox(box);
+            balls.forEach(ball => drawBall(ball));
+            
+            // Update FPS
             frameCount++;
             if (currentTime - fpsTime >= 1000) {
-                fps = frameCount;
+                fpsDisplay.textContent = frameCount;
                 frameCount = 0;
                 fpsTime = currentTime;
-                document.getElementById('fps').textContent = `FPS: ${fps}`;
             }
-
-            // Clear canvas with trail effect
-            ctx.fillStyle = 'rgba(34, 34, 34, 0.1)';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-            if (isRunning) {
-                // Update rotation
-                boxRotation += rotationSpeed * deltaTime;
-
-                // Update balls
-                balls.forEach(ball => ball.update(deltaTime));
-            }
-
-            // Draw box
-            drawBox();
-
-            // Draw balls
-            balls.forEach(ball => ball.draw());
-
+            
             requestAnimationFrame(animate);
         }
 
-        // Event listeners
-        startPauseButton.addEventListener('click', () => {
-            isRunning = !isRunning;
-            startPauseButton.textContent = isRunning ? 'Pause' : 'Start';
-        });
-
-        resetButton.addEventListener('click', () => {
-            boxRotation = 0;
-            initBalls();
-        });
-
-        gravitySlider.addEventListener('input', (e) => {
-            gravity = parseFloat(e.target.value);
-            gravityValue.textContent = gravity.toFixed(1);
-        });
-
-        dampingSlider.addEventListener('input', (e) => {
-            damping = parseFloat(e.target.value);
-            dampingValue.textContent = damping.toFixed(2);
-        });
-
-        rotationSpeedSlider.addEventListener('input', (e) => {
-            rotationSpeed = parseFloat(e.target.value);
-            rotationSpeedValue.textContent = rotationSpeed.toFixed(1);
-        });
-
-        ballCountSlider.addEventListener('input', (e) => {
-            ballCount = parseInt(e.target.value);
-            ballCountValue.textContent = ballCount;
-            initBalls();
-        });
-
-        ballSizeSlider.addEventListener('input', (e) => {
-            ballSize = parseInt(e.target.value);
-            ballSizeValue.textContent = ballSize;
-            balls.forEach(ball => ball.radius = ballSize);
-        });
-
-        ballColorInput.addEventListener('input', (e) => {
-            ballColor = e.target.value;
-            balls.forEach(ball => ball.color = ballColor);
-        });
-
         // Initialize
         initBalls();
+        updateControls();
         requestAnimationFrame(animate);
     </script>
 </body>
