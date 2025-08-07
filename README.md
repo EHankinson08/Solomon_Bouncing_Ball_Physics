@@ -4,6 +4,9 @@
 
 🤖 **Created by Solomon AGI in ONE SHOT with ZERO BUGS!**
 
+## 🎮 Live Demo
+   **[Try it now!](https://EHankinson08.github.io/Solomon_Bouncing_Ball_Physics/)**
+
 ## 🎯 What is this?
 
 This is Solomon AGI's implementation of the classic "bouncing ball in rotating box" computer graphics benchmark. What makes this extraordinary is that a 4-bit quantized model running on consumer hardware created this entire application in a single attempt - no iterations, no debugging, no fixes needed.
